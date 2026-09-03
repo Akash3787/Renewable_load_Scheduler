@@ -1,0 +1,124 @@
+facility:
+  name: "Apex Precision Industrial Facility"
+  location:
+    latitude: 13.0827   # Chennai / Industrial Hub coordinates
+    longitude: 80.2707
+    timezone: "Asia/Kolkata"
+
+renewable_assets:
+  pv_capacity_kwp: 500.0
+  pv_derate_factor: 0.85
+  pv_temp_coeff: -0.004 # %/°C deviation from 25°C
+  
+  wind_rated_kw: 300.0
+  wind_cut_in_m_s: 3.0
+  wind_rated_m_s: 12.0
+  wind_cut_out_m_s: 25.0
+
+bess:
+  capacity_kwh: 400.0
+  initial_soc_kwh: 200.0
+  min_soc_pct: 0.10 # 10% SOC reserve buffer
+  max_soc_pct: 0.95 # 95% upper limit
+  max_charge_kw: 100.0
+  max_discharge_kw: 100.0
+  round_trip_efficiency: 0.90 # 90% RTE (0.9487 one-way efficiency)
+
+tariff:
+  currency: "INR"
+  energy_rate_off_peak: 5.0 # per kWh
+  energy_rate_peak: 12.0     # per kWh
+  peak_hours_start: 9       # 09:00
+  peak_hours_end: 21        # 21:00
+  demand_charge_rate_per_kw: 500.0 # Billed on maximum 15-min or 1-hr peak grid draw in period
+
+loads:
+  - load_id: "FIXED_ASSEMBLY"
+    name: "Main Assembly Line"
+    load_type: "fixed"
+    power_kw: 120.0
+    duration_min: 1440
+    earliest_start: "00:00"
+    deadline: "23:59"
+    comfort_band_kw: 0.0
+    priority: 1
+
+  - load_id: "FIXED_SAFETY"
+    name: "Safety & Essential Facilities"
+    load_type: "fixed"
+    power_kw: 30.0
+    duration_min: 1440
+    earliest_start: "00:00"
+    deadline: "23:59"
+    comfort_band_kw: 0.0
+    priority: 1
+
+  - load_id: "FLEX_OVEN_1"
+    name: "Batch Curing Oven #1"
+    load_type: "flexible"
+    power_kw: 80.0
+    duration_min: 180 # 3 hours
+    earliest_start: "06:00"
+    deadline: "18:00"
+    comfort_band_kw: 0.0
+    priority: 2
+
+  - load_id: "FLEX_OVEN_2"
+    name: "Batch Curing Oven #2"
+    load_type: "flexible"
+    power_kw: 80.0
+    duration_min: 180 # 3 hours
+    earliest_start: "08:00"
+    deadline: "20:00"
+    comfort_band_kw: 0.0
+    priority: 2
+
+  - load_id: "FLEX_PUMPING"
+    name: "Water Pumping & Storage System"
+    load_type: "flexible"
+    power_kw: 50.0
+    duration_min: 240 # 4 hours
+    earliest_start: "00:00"
+    deadline: "23:00"
+    comfort_band_kw: 0.0
+    priority: 3
+
+  - load_id: "FLEX_FORKLIFT_EV"
+    name: "Forklift Fleet Fast Charging"
+    load_type: "flexible"
+    power_kw: 60.0
+    duration_min: 300 # 5 hours
+    earliest_start: "10:00"
+    deadline: "22:00"
+    comfort_band_kw: 0.0
+    priority: 2
+
+  - load_id: "FLEX_COMPRESSOR"
+    name: "Air Compressor Tank Cycling"
+    load_type: "flexible"
+    power_kw: 40.0
+    duration_min: 120 # 2 hours
+    earliest_start: "07:00"
+    deadline: "17:00"
+    comfort_band_kw: 0.0
+    priority: 3
+
+  - load_id: "CURTAIL_HVAC"
+    name: "Plant HVAC & Air Handling"
+    load_type: "curtailable"
+    power_kw: 100.0
+    duration_min: 1440
+    earliest_start: "00:00"
+    deadline: "23:59"
+    comfort_band_kw: 30.0 # Max allowed reduction = 30 kW (runs at 70..100 kW)
+    priority: 3
+
+  - load_id: "CURTAIL_CHILLER"
+    name: "Chilled Water Buffering System"
+    load_type: "curtailable"
+    power_kw: 70.0
+    duration_min: 1440
+    earliest_start: "00:00"
+    deadline: "23:59"
+    comfort_band_kw: 20.0 # Max allowed reduction = 20 kW (runs at 50..70 kW)
+    priority: 3
