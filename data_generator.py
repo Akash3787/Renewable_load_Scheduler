@@ -74,114 +74,112 @@ def populate_database(start_date: datetime = datetime(2026, 6, 1, 0, 0), days: i
     config = load_config()
     conn = get_connection()
     
-    # 1. Populate Loads Table
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM loads;")
-    for load in config['loads']:
-        cursor.execute("""
-            INSERT INTO loads (load_id, name, load_type, power_kw, duration_min, earliest_start, deadline, comfort_band_kw, priority)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            load['load_id'], load['name'], load['load_type'], load['power_kw'],
-            load['duration_min'], load['earliest_start'], load['deadline'],
-            load['comfort_band_kw'], load['priority']
-        ))
+    try:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM loads;")
+        for load in config['loads']:
+            cursor.execute("""
+                INSERT INTO loads (load_id, name, load_type, power_kw, duration_min, earliest_start, deadline, comfort_band_kw, priority)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                load['load_id'], load['name'], load['load_type'], load['power_kw'],
+                load['duration_min'], load['earliest_start'], load['deadline'],
+                load['comfort_band_kw'], load['priority']
+            ))
+            
+        df_weather = generate_synthetic_weather_data(start_date, days)
         
-    # 2. Populate Weather & Generation Actuals
-    df_weather = generate_synthetic_weather_data(start_date, days)
-    
-    pv_cap = config['renewable_assets']['pv_capacity_kwp']
-    pv_derate = config['renewable_assets']['pv_derate_factor']
-    pv_temp_coeff = config['renewable_assets']['pv_temp_coeff']
-    
-    wind_rated_kw = config['renewable_assets']['wind_rated_kw']
-    cut_in = config['renewable_assets']['wind_cut_in_m_s']
-    rated_v = config['renewable_assets']['wind_rated_m_s']
-    cut_out = config['renewable_assets']['wind_cut_out_m_s']
-    
-    cursor.execute("DELETE FROM generation_actual;")
-    cursor.execute("DELETE FROM generation_forecast;")
-    cursor.execute("DELETE FROM tariff;")
-    cursor.execute("DELETE FROM storage_state;")
-    cursor.execute("DELETE FROM field_log;")
-    
-    forecast_run_time = start_date.isoformat()
-    
-    for _, row in df_weather.iterrows():
-        ts_str = row['timestamp']
-        ts_dt = datetime.fromisoformat(ts_str)
+        pv_cap = config['renewable_assets']['pv_capacity_kwp']
+        pv_derate = config['renewable_assets']['pv_derate_factor']
+        pv_temp_coeff = config['renewable_assets']['pv_temp_coeff']
         
-        pv_actual = calculate_pv_power(
-            ghi=row['ghi'], temp_c=row['temp_c'],
-            capacity_kwp=pv_cap, derate_factor=pv_derate, temp_coeff=pv_temp_coeff
-        )
+        wind_rated_kw = config['renewable_assets']['wind_rated_kw']
+        cut_in = config['renewable_assets']['wind_cut_in_m_s']
+        rated_v = config['renewable_assets']['wind_rated_m_s']
+        cut_out = config['renewable_assets']['wind_cut_out_m_s']
         
-        wind_actual = calculate_wind_power(
-            wind_speed=row['wind_speed_100m'], rated_power_kw=wind_rated_kw,
-            cut_in_speed=cut_in, rated_speed=rated_v, cut_out_speed=cut_out
-        )
+        cursor.execute("DELETE FROM generation_actual;")
+        cursor.execute("DELETE FROM generation_forecast;")
+        cursor.execute("DELETE FROM tariff;")
+        cursor.execute("DELETE FROM storage_state;")
+        cursor.execute("DELETE FROM field_log;")
         
-        cursor.execute("""
-            INSERT INTO generation_actual (timestamp, ghi, cloud_cover_pct, temp_c, wind_speed_10m, wind_speed_100m, pv_kw_actual, wind_kw_actual)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (ts_str, row['ghi'], row['cloud_cover_pct'], row['temp_c'], row['wind_speed_10m'], row['wind_speed_100m'], pv_actual, wind_actual))
+        forecast_run_time = start_date.isoformat()
         
-        pv_err_std = 0.15 * pv_actual + 10.0 * (row['cloud_cover_pct'] / 100.0)
-        wind_err_std = 0.12 * wind_actual + 5.0
-        
-        pv_p50 = max(0.0, pv_actual + np.random.normal(0, pv_err_std))
-        wind_p50 = max(0.0, wind_actual + np.random.normal(0, wind_err_std))
-        
-        pv_p10 = max(0.0, pv_p50 - 1.28 * pv_err_std)
-        pv_p90 = pv_p50 + 1.28 * pv_err_std
-        
-        wind_p10 = max(0.0, wind_p50 - 1.28 * wind_err_std)
-        wind_p90 = wind_p50 + 1.28 * wind_err_std
-        
-        horizon = (ts_dt - start_date).total_seconds() / 3600.0
-        
-        cursor.execute("""
-            INSERT INTO generation_forecast (
-                forecast_run_time, target_timestamp, horizon_hours, ghi, cloud_cover_pct, temp_c,
-                wind_speed_10m, wind_speed_100m, pv_kw_p50, pv_kw_p10, pv_kw_p90,
-                wind_kw_p50, wind_kw_p10, wind_kw_p90, source
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            forecast_run_time, ts_str, horizon, row['ghi'], row['cloud_cover_pct'], row['temp_c'],
-            row['wind_speed_10m'], row['wind_speed_100m'], pv_p50, pv_p10, pv_p90,
-            wind_p50, wind_p10, wind_p90, "climatology_fallback"
-        ))
-        
-        hour = ts_dt.hour
-        is_peak = 1 if (config['tariff']['peak_hours_start'] <= hour < config['tariff']['peak_hours_end']) else 0
-        energy_rate = config['tariff']['energy_rate_peak'] if is_peak else config['tariff']['energy_rate_off_peak']
-        demand_rate = config['tariff']['demand_charge_rate_per_kw']
-        
-        cursor.execute("""
-            INSERT INTO tariff (timestamp, energy_rate, demand_charge_rate, is_peak_window)
-            VALUES (?, ?, ?, ?)
-        """, (ts_str, energy_rate, demand_rate, is_peak))
-        
-        cursor.execute("""
-            INSERT INTO storage_state (timestamp, soc_kwh, capacity_kwh, max_charge_kw, max_discharge_kw, round_trip_eff)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (
-            ts_str, config['bess']['initial_soc_kwh'], config['bess']['capacity_kwh'],
-            config['bess']['max_charge_kw'], config['bess']['max_discharge_kw'], config['bess']['round_trip_efficiency']
-        ))
-        
-    # Pre-populate realistic operator logs and surveys
-    sample_logs = [
-        (start_date.isoformat(), "OP-SHIFT-1", "FLEX_OVEN_1", "override", "[Raw Material Staging Delay] Oven #1 delayed 20 mins due to raw material coil inspection in Bay 3."),
-        ((start_date + timedelta(hours=8)).isoformat(), "OP-SHIFT-2", "CURTAIL_HVAC", "note", "[Shift Changeover Adjustment] HVAC curtailment accepted smoothly. Temp remained within 24°C comfort band."),
-        ((start_date + timedelta(hours=16)).isoformat(), "R. Sharma (Plant Lead)", "SYSTEM_FEEDBACK", "operator_survey", "[OPERATOR SURVEY - Rating: 5/5 | Disruption: No disruption] Automated load shifting aligned oven curing with solar peak. Zero deadline issues.")
-    ]
-    for ts_l, eng, lid, ev, note in sample_logs:
-        cursor.execute("INSERT INTO field_log (timestamp, engineer_id, load_id, event_type, note) VALUES (?, ?, ?, ?, ?);", (ts_l, eng, lid, ev, note))
-        
-    conn.commit()
-    conn.close()
-    print(f"Database successfully populated with {days} days of data and operator field logs.")
+        for _, row in df_weather.iterrows():
+            ts_str = row['timestamp']
+            ts_dt = datetime.fromisoformat(ts_str)
+            
+            pv_actual = calculate_pv_power(
+                ghi=row['ghi'], temp_c=row['temp_c'],
+                capacity_kwp=pv_cap, derate_factor=pv_derate, temp_coeff=pv_temp_coeff
+            )
+            
+            wind_actual = calculate_wind_power(
+                wind_speed=row['wind_speed_100m'], rated_power_kw=wind_rated_kw,
+                cut_in_speed=cut_in, rated_speed=rated_v, cut_out_speed=cut_out
+            )
+            
+            cursor.execute("""
+                INSERT INTO generation_actual (timestamp, ghi, cloud_cover_pct, temp_c, wind_speed_10m, wind_speed_100m, pv_kw_actual, wind_kw_actual)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (ts_str, row['ghi'], row['cloud_cover_pct'], row['temp_c'], row['wind_speed_10m'], row['wind_speed_100m'], pv_actual, wind_actual))
+            
+            pv_err_std = 0.15 * pv_actual + 10.0 * (row['cloud_cover_pct'] / 100.0)
+            wind_err_std = 0.12 * wind_actual + 5.0
+            
+            pv_p50 = max(0.0, pv_actual + np.random.normal(0, pv_err_std))
+            wind_p50 = max(0.0, wind_actual + np.random.normal(0, wind_err_std))
+            
+            pv_p10 = max(0.0, pv_p50 - 1.28 * pv_err_std)
+            pv_p90 = pv_p50 + 1.28 * pv_err_std
+            
+            wind_p10 = max(0.0, wind_p50 - 1.28 * wind_err_std)
+            wind_p90 = wind_p50 + 1.28 * wind_err_std
+            
+            horizon = (ts_dt - start_date).total_seconds() / 3600.0
+            
+            cursor.execute("""
+                INSERT INTO generation_forecast (
+                    forecast_run_time, target_timestamp, horizon_hours, ghi, cloud_cover_pct, temp_c,
+                    wind_speed_10m, wind_speed_100m, pv_kw_p50, pv_kw_p10, pv_kw_p90,
+                    wind_kw_p50, wind_kw_p10, wind_kw_p90, source
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                forecast_run_time, ts_str, horizon, row['ghi'], row['cloud_cover_pct'], row['temp_c'],
+                row['wind_speed_10m'], row['wind_speed_100m'], pv_p50, pv_p10, pv_p90,
+                wind_p50, wind_p10, wind_p90, "climatology_fallback"
+            ))
+            
+            hour = ts_dt.hour
+            is_peak = 1 if (config['tariff']['peak_hours_start'] <= hour < config['tariff']['peak_hours_end']) else 0
+            energy_rate = config['tariff']['energy_rate_peak'] if is_peak else config['tariff']['energy_rate_off_peak']
+            demand_rate = config['tariff']['demand_charge_rate_per_kw']
+            
+            cursor.execute("""
+                INSERT INTO tariff (timestamp, energy_rate, demand_charge_rate, is_peak_window)
+                VALUES (?, ?, ?, ?)
+            """, (ts_str, energy_rate, demand_rate, is_peak))
+            
+            cursor.execute("""
+                INSERT INTO storage_state (timestamp, soc_kwh, capacity_kwh, max_charge_kw, max_discharge_kw, round_trip_eff)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (
+                ts_str, config['bess']['initial_soc_kwh'], config['bess']['capacity_kwh'],
+                config['bess']['max_charge_kw'], config['bess']['max_discharge_kw'], config['bess']['round_trip_efficiency']
+            ))
+            
+        sample_logs = [
+            (start_date.isoformat(), "OP-SHIFT-1", "FLEX_OVEN_1", "override", "[Raw Material Staging Delay] Oven #1 delayed 20 mins due to raw material coil inspection in Bay 3."),
+            ((start_date + timedelta(hours=8)).isoformat(), "OP-SHIFT-2", "CURTAIL_HVAC", "note", "[Shift Changeover Adjustment] HVAC curtailment accepted smoothly. Temp remained within 24°C comfort band."),
+            ((start_date + timedelta(hours=16)).isoformat(), "R. Sharma (Plant Lead)", "SYSTEM_FEEDBACK", "operator_survey", "[OPERATOR SURVEY - Rating: 5/5 | Disruption: No disruption] Automated load shifting aligned oven curing with solar peak. Zero deadline issues.")
+        ]
+        for ts_l, eng, lid, ev, note in sample_logs:
+            cursor.execute("INSERT INTO field_log (timestamp, engineer_id, load_id, event_type, note) VALUES (?, ?, ?, ?, ?);", (ts_l, eng, lid, ev, note))
+            
+        conn.commit()
+    finally:
+        conn.close()
 
 if __name__ == "__main__":
     populate_database()
