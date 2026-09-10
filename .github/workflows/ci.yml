@@ -30,7 +30,7 @@ jobs:
 
     - name: Run PyTest Test Suite
       run: |
-        python -m pytest tests/ -v -W ignore
+        python -m pytest tests/
 
     - name: Run End-to-End Benchmark
       run: |

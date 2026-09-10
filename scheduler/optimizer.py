@@ -183,11 +183,15 @@ class MILPScheduler:
         # Solve MILP
         import shutil
         cbc_path = shutil.which("cbc")
-        if cbc_path:
-            solver = pulp.PULP_CBC_CMD(path=cbc_path, msg=False)
-        else:
+        try:
+            if cbc_path:
+                solver = pulp.PULP_CBC_CMD(path=cbc_path, msg=False)
+            else:
+                solver = pulp.PULP_CBC_CMD(msg=False)
+            status = prob.solve(solver)
+        except Exception:
             solver = pulp.PULP_CBC_CMD(msg=False)
-        status = prob.solve(solver)
+            status = prob.solve(solver)
         
         if pulp.LpStatus[status] != 'Optimal':
             print(f"[MILPScheduler] Warning: Solver status: {pulp.LpStatus[status]}")
