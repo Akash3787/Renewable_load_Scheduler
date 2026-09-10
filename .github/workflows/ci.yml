@@ -30,7 +30,7 @@ jobs:
 
     - name: Run PyTest Test Suite
       run: |
-        python -m pytest tests/
+        python -m pytest tests/ -s --tb=short
 
     - name: Run End-to-End Benchmark
       run: |
