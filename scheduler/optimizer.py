@@ -181,7 +181,12 @@ class MILPScheduler:
                 prob += soc[h] == soc[h-1] + (p_chg[h] * eta_one_way) - (p_dis[h] / eta_one_way)
 
         # Solve MILP
-        solver = pulp.PULP_CBC_CMD(msg=False)
+        import shutil
+        cbc_path = shutil.which("cbc")
+        if cbc_path:
+            solver = pulp.PULP_CBC_CMD(path=cbc_path, msg=False)
+        else:
+            solver = pulp.PULP_CBC_CMD(msg=False)
         status = prob.solve(solver)
         
         if pulp.LpStatus[status] != 'Optimal':

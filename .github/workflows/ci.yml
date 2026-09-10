@@ -30,7 +30,7 @@ jobs:
 
     - name: Run PyTest Test Suite
       run: |
-        python -m pytest tests/ --disable-warnings
+        python -m pytest tests/ -v -W ignore
 
     - name: Run End-to-End Benchmark
       run: |
