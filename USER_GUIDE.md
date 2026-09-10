@@ -20,7 +20,7 @@ Welcome to the **Renewable-Aware Industrial Load Scheduler** user guide. This ma
 
 ## 2. Setting Up Facility Scenarios (`config/scenario.yaml`)
 
-Facility profiles are defined in [`config/scenario.yaml`](file:///Users/akashbaskaran/.gemini/antigravity-ide/scratch/renewable_load_scheduler/config/scenario.yaml). To adapt the system to a new industrial site:
+Facility profiles are defined in [`config/scenario.yaml`](config/scenario.yaml). To adapt the system to a new industrial site:
 
 1. Open `config/scenario.yaml`.
 2. Update `facility.location` latitude and longitude for weather forecasting.

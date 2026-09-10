@@ -1,6 +1,6 @@
 # Data Schema Documentation
 
-The system uses SQLite for offline-first, local persistence. All tables are defined in [`schema.sql`](file:///Users/akashbaskaran/.gemini/antigravity-ide/scratch/renewable_load_scheduler/schema.sql).
+The system uses SQLite for offline-first, local persistence. All tables are defined in [`schema.sql`](../schema.sql).
 
 ## Entity-Relationship Summary
 

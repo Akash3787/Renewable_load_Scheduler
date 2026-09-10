@@ -23,7 +23,7 @@ def generate_synthetic_weather_data(start_date: datetime, days: int = 28):
     hours = days * 24
     timestamps = [start_date + timedelta(hours=i) for i in range(hours)]
     
-    np.random.seed(42) # Reproducible synthetic data
+    np.random.seed(42)
     
     ghi_list = []
     temp_list = []
@@ -33,33 +33,25 @@ def generate_synthetic_weather_data(start_date: datetime, days: int = 28):
     
     for i, ts in enumerate(timestamps):
         hour = ts.hour
-        day_of_year = ts.timetuple().tm_yday
         
-        # Diurnal Solar Profile (GHI in W/m2)
-        # Solar noon roughly at 12:00
         if 6 <= hour <= 18:
             solar_rad = math.sin((hour - 6) / 12.0 * math.pi)
             base_ghi = 950.0 * solar_rad
         else:
             base_ghi = 0.0
             
-        # Cloud cover dynamics (passing weather fronts)
-        # Low frequency weather system + high frequency turbulence
-        front_cycle = math.sin(i / 36.0) * 40.0 + 30.0 # 0 to 70%
+        front_cycle = math.sin(i / 36.0) * 40.0 + 30.0
         random_cloud = np.clip(front_cycle + np.random.normal(0, 15), 0, 100)
         
-        # Actual GHI reduced by cloud cover
         ghi_actual = base_ghi * (1.0 - 0.75 * (random_cloud / 100.0) ** 2)
         ghi_actual = max(0.0, ghi_actual)
         
-        # Ambient temperature (°C)
         base_temp = 28.0 + 5.0 * math.sin((hour - 9) / 24.0 * 2 * math.pi)
         temp_c = base_temp + np.random.normal(0, 1.0)
         
-        # Wind speed (m/s) with nocturnal boundary layer variations
         base_wind_10m = 5.5 + 2.5 * math.sin((i / 48.0) * 2 * math.pi)
         wind_10m = max(0.0, base_wind_10m + np.random.normal(0, 1.2))
-        wind_100m = wind_10m * (100.0 / 10.0) ** 0.2 # Power law wind shear
+        wind_100m = wind_10m * (100.0 / 10.0) ** 0.2
         
         ghi_list.append(ghi_actual)
         temp_list.append(temp_c)
@@ -111,6 +103,7 @@ def populate_database(start_date: datetime = datetime(2026, 6, 1, 0, 0), days: i
     cursor.execute("DELETE FROM generation_forecast;")
     cursor.execute("DELETE FROM tariff;")
     cursor.execute("DELETE FROM storage_state;")
+    cursor.execute("DELETE FROM field_log;")
     
     forecast_run_time = start_date.isoformat()
     
@@ -118,21 +111,14 @@ def populate_database(start_date: datetime = datetime(2026, 6, 1, 0, 0), days: i
         ts_str = row['timestamp']
         ts_dt = datetime.fromisoformat(ts_str)
         
-        # Calculate ground truth PV & Wind
         pv_actual = calculate_pv_power(
-            ghi=row['ghi'],
-            temp_c=row['temp_c'],
-            capacity_kwp=pv_cap,
-            derate_factor=pv_derate,
-            temp_coeff=pv_temp_coeff
+            ghi=row['ghi'], temp_c=row['temp_c'],
+            capacity_kwp=pv_cap, derate_factor=pv_derate, temp_coeff=pv_temp_coeff
         )
         
         wind_actual = calculate_wind_power(
-            wind_speed=row['wind_speed_100m'],
-            rated_power_kw=wind_rated_kw,
-            cut_in_speed=cut_in,
-            rated_speed=rated_v,
-            cut_out_speed=cut_out
+            wind_speed=row['wind_speed_100m'], rated_power_kw=wind_rated_kw,
+            cut_in_speed=cut_in, rated_speed=rated_v, cut_out_speed=cut_out
         )
         
         cursor.execute("""
@@ -140,15 +126,12 @@ def populate_database(start_date: datetime = datetime(2026, 6, 1, 0, 0), days: i
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, (ts_str, row['ghi'], row['cloud_cover_pct'], row['temp_c'], row['wind_speed_10m'], row['wind_speed_100m'], pv_actual, wind_actual))
         
-        # Add day-ahead forecast with realistic forecast error noise
-        # PV error correlated with cloudiness, Wind error correlated with speed
         pv_err_std = 0.15 * pv_actual + 10.0 * (row['cloud_cover_pct'] / 100.0)
         wind_err_std = 0.12 * wind_actual + 5.0
         
         pv_p50 = max(0.0, pv_actual + np.random.normal(0, pv_err_std))
         wind_p50 = max(0.0, wind_actual + np.random.normal(0, wind_err_std))
         
-        # P10 / P90 Uncertainty Bands
         pv_p10 = max(0.0, pv_p50 - 1.28 * pv_err_std)
         pv_p90 = pv_p50 + 1.28 * pv_err_std
         
@@ -169,7 +152,6 @@ def populate_database(start_date: datetime = datetime(2026, 6, 1, 0, 0), days: i
             wind_p50, wind_p10, wind_p90, "climatology_fallback"
         ))
         
-        # Tariff structure
         hour = ts_dt.hour
         is_peak = 1 if (config['tariff']['peak_hours_start'] <= hour < config['tariff']['peak_hours_end']) else 0
         energy_rate = config['tariff']['energy_rate_peak'] if is_peak else config['tariff']['energy_rate_off_peak']
@@ -180,7 +162,6 @@ def populate_database(start_date: datetime = datetime(2026, 6, 1, 0, 0), days: i
             VALUES (?, ?, ?, ?)
         """, (ts_str, energy_rate, demand_rate, is_peak))
         
-        # Initial BESS storage state
         cursor.execute("""
             INSERT INTO storage_state (timestamp, soc_kwh, capacity_kwh, max_charge_kw, max_discharge_kw, round_trip_eff)
             VALUES (?, ?, ?, ?, ?, ?)
@@ -189,9 +170,18 @@ def populate_database(start_date: datetime = datetime(2026, 6, 1, 0, 0), days: i
             config['bess']['max_charge_kw'], config['bess']['max_discharge_kw'], config['bess']['round_trip_efficiency']
         ))
         
+    # Pre-populate realistic operator logs and surveys
+    sample_logs = [
+        (start_date.isoformat(), "OP-SHIFT-1", "FLEX_OVEN_1", "override", "[Raw Material Staging Delay] Oven #1 delayed 20 mins due to raw material coil inspection in Bay 3."),
+        ((start_date + timedelta(hours=8)).isoformat(), "OP-SHIFT-2", "CURTAIL_HVAC", "note", "[Shift Changeover Adjustment] HVAC curtailment accepted smoothly. Temp remained within 24°C comfort band."),
+        ((start_date + timedelta(hours=16)).isoformat(), "R. Sharma (Plant Lead)", "SYSTEM_FEEDBACK", "operator_survey", "[OPERATOR SURVEY - Rating: 5/5 | Disruption: No disruption] Automated load shifting aligned oven curing with solar peak. Zero deadline issues.")
+    ]
+    for ts_l, eng, lid, ev, note in sample_logs:
+        cursor.execute("INSERT INTO field_log (timestamp, engineer_id, load_id, event_type, note) VALUES (?, ?, ?, ?, ?);", (ts_l, eng, lid, ev, note))
+        
     conn.commit()
     conn.close()
-    print(f"Database successfully populated with {days} days of synthetic multi-week data.")
+    print(f"Database successfully populated with {days} days of data and operator field logs.")
 
 if __name__ == "__main__":
     populate_database()

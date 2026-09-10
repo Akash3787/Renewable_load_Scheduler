@@ -56,7 +56,7 @@ flowchart LR
 ### 1. Installation
 Clone the repository and install dependencies:
 ```bash
-cd /Users/akashbaskaran/.gemini/antigravity-ide/scratch/renewable_load_scheduler
+cd renewable_load_scheduler
 pip install -r requirements.txt
 ```
 
@@ -98,25 +98,28 @@ python -m pytest tests/
 
 ```
 renewable_load_scheduler/
+├── Dockerfile                          # Multi-stage Python container setup
+├── docker-compose.yml                  # Single command launcher for app & tests
 ├── README.md                          # Project overview and quickstart
 ├── USER_GUIDE.md                      # Operator manual & scenario setup guide
 ├── run_all.py                         # Single-command end-to-end benchmark runner
 ├── requirements.txt                   # Dependency manifest
 ├── schema.sql                         # SQLite schema definitions
 ├── db.py                              # SQLite database helper module
-├── data_generator.py                  # Synthetic weather & generation data generator
+├── data_generator.py                  # Synthetic & real weather/generation data loader
 ├── config/
 │   └── scenario.yaml                  # Facility profile, loads, BESS, tariff config
 ├── forecast/
 │   ├── adapter.py                     # Open-Meteo API adapter with offline fallbacks
 │   ├── generation_model.py            # Physical PV & Wind power curve models
-│   └── uncertainty.py                 # P10/P50/P90 confidence interval generator
+│   └── uncertainty.py                 # Empirical residual error & calibration generator
 ├── scheduler/
 │   ├── baseline.py                    # Naive business-as-usual fixed scheduler
-│   └── optimizer.py                   # MILP PuLP/CBC load & BESS co-optimizer
+│   ├── optimizer.py                   # MILP PuLP/CBC load & BESS co-optimizer
+│   └── mpc_controller.py               # Closed-loop rolling horizon MPC controller
 ├── sim/
 │   ├── backtest_engine.py             # Simulation engine evaluating schedules against ground truth
-│   └── metrics.py                     # KPI calculations & hard constraint validators
+│   └── metrics.py                     # KPI calculations & pinball/coverage metrics
 ├── app/
 │   ├── dashboard.py                   # Streamlit interactive visual dashboard
 │   └── field_capture.py               # Mobile-friendly offline field event logger
@@ -124,7 +127,8 @@ renewable_load_scheduler/
 │   ├── test_forecast.py               # Weather & physical model tests
 │   ├── test_baseline.py               # Baseline scheduler tests
 │   ├── test_optimizer.py              # MILP vs Baseline vs Oracle comparative tests
-│   └── test_edge_cases.py             # 5 Edge/failure case scenario tests
+│   ├── test_edge_cases.py             # 5 Edge/failure case scenario tests
+│   └── test_mpc_and_calibration.py    # Closed-loop MPC & empirical calibration tests
 └── docs/
     ├── architecture.md                # System architecture documentation
     ├── data_schema.md                 # Database ER model documentation
@@ -138,10 +142,10 @@ renewable_load_scheduler/
 
 ## 📄 Documentation
 
-- [User Guide](file:///Users/akashbaskaran/.gemini/antigravity-ide/scratch/renewable_load_scheduler/USER_GUIDE.md)
-- [Architecture](file:///Users/akashbaskaran/.gemini/antigravity-ide/scratch/renewable_load_scheduler/docs/architecture.md)
-- [Data Schema](file:///Users/akashbaskaran/.gemini/antigravity-ide/scratch/renewable_load_scheduler/docs/data_schema.md)
-- [Failure Analysis](file:///Users/akashbaskaran/.gemini/antigravity-ide/scratch/renewable_load_scheduler/docs/failure_analysis.md)
-- [Risk Register](file:///Users/akashbaskaran/.gemini/antigravity-ide/scratch/renewable_load_scheduler/docs/risk_register.md)
-- [Stakeholder Assumptions](file:///Users/akashbaskaran/.gemini/antigravity-ide/scratch/renewable_load_scheduler/docs/stakeholder_assumptions.md)
-- [Stakeholder Validation](file:///Users/akashbaskaran/.gemini/antigravity-ide/scratch/renewable_load_scheduler/docs/stakeholder_validation.md)
+- [User Guide](USER_GUIDE.md)
+- [Architecture](docs/architecture.md)
+- [Data Schema](docs/data_schema.md)
+- [Failure Analysis](docs/failure_analysis.md)
+- [Risk Register](docs/risk_register.md)
+- [Stakeholder Assumptions](docs/stakeholder_assumptions.md)
+- [Stakeholder Validation](docs/stakeholder_validation.md)

@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  benchmark:
+    build: .
+    container_name: load_scheduler_benchmark
+    command: python run_all.py
+    volumes:
+      - .:/app
+
+  dashboard:
+    build: .
+    container_name: load_scheduler_dashboard
+    command: streamlit run app/dashboard.py --server.port=8501 --server.address=0.0.0.0
+    ports:
+      - "8501:8501"
+    volumes:
+      - .:/app
+
+  field-capture:
+    build: .
+    container_name: load_scheduler_field_capture
+    command: streamlit run app/field_capture.py --server.port=8502 --server.address=0.0.0.0
+    ports:
+      - "8502:8502"
+    volumes:
+      - .:/app
+
+  test:
+    build: .
+    container_name: load_scheduler_tests
+    command: python -m pytest tests/
+    volumes:
+      - .:/app
