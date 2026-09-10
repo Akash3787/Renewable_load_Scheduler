@@ -5,8 +5,9 @@ import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Optional
 
-from db import get_connection, init_db
+from db import get_connection, init_db, DB_PATH
 from forecast.generation_model import calculate_pv_power, calculate_wind_power
 
 CONFIG_PATH = Path(__file__).parent / "config" / "scenario.yaml"
@@ -69,10 +70,11 @@ def generate_synthetic_weather_data(start_date: datetime, days: int = 28):
     })
     return df
 
-def populate_database(start_date: datetime = datetime(2026, 6, 1, 0, 0), days: int = 28):
-    init_db()
+def populate_database(start_date: datetime = datetime(2026, 6, 1, 0, 0), days: int = 28, db_path: Optional[Path] = None):
+    target_db = db_path if db_path else DB_PATH
+    init_db(db_path=target_db)
     config = load_config()
-    conn = get_connection()
+    conn = get_connection(db_path=target_db)
     
     try:
         cursor = conn.cursor()

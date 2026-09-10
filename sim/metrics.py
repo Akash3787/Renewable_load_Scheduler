@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 from forecast.uncertainty import evaluate_empirical_coverage_and_pinball
 

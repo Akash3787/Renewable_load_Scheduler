@@ -26,7 +26,6 @@ def test_edge_case_1_cloud_cover_surprise():
     
     conn = get_connection()
     cursor = conn.cursor()
-    # Artificially crush actual PV to 10% of forecast (cloud surprise)
     cursor.execute("UPDATE generation_actual SET pv_kw_actual = pv_kw_actual * 0.10 WHERE timestamp IN ({});".format(','.join('?' * 24)), ts_strings)
     conn.commit()
     conn.close()
@@ -55,7 +54,6 @@ def test_edge_case_2_wind_lull():
     
     conn = get_connection()
     cursor = conn.cursor()
-    # Zero out actual wind generation
     cursor.execute("UPDATE generation_actual SET wind_kw_actual = 0.0 WHERE timestamp IN ({});".format(','.join('?' * 24)), ts_strings)
     conn.commit()
     conn.close()
@@ -83,7 +81,6 @@ def test_edge_case_3_deadline_conflict_low_renewables():
     
     conn = get_connection()
     cursor = conn.cursor()
-    # Zero out all solar and wind generation for forecast and actuals
     cursor.execute("UPDATE generation_actual SET pv_kw_actual = 0.0, wind_kw_actual = 0.0 WHERE timestamp IN ({});".format(','.join('?' * 24)), ts_strings)
     cursor.execute("UPDATE generation_forecast SET pv_kw_p50 = 0.0, wind_kw_p50 = 0.0 WHERE target_timestamp IN ({});".format(','.join('?' * 24)), ts_strings)
     conn.commit()
@@ -97,7 +94,7 @@ def test_edge_case_3_deadline_conflict_low_renewables():
     conn.close()
     
     validation = validate_hard_constraints(df_sched, loads_df)
-    assert validation['zero_violations'], "Optimizer failed to satisfy deadlines under zero renewables!"
+    assert validation['zero_violations'], f"Optimizer failed to satisfy deadlines under zero renewables: {validation['violations']}"
 
 def test_edge_case_4_battery_degraded_unavailable():
     """
@@ -117,7 +114,7 @@ def test_edge_case_4_battery_degraded_unavailable():
     conn.close()
     
     validation = validate_hard_constraints(df_sched, loads_df)
-    assert validation['zero_violations']
+    assert validation['zero_violations'], f"Battery offline caused violations: {validation['violations']}"
     assert results['max_peak_grid_kw'] > 0.0
 
 def test_edge_case_5_offline_climatology_fallback():
