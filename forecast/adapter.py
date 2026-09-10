@@ -67,7 +67,6 @@ class ForecastAdapter:
         
         try:
             df = pd.read_sql_query(query, conn, params=target_timestamps)
-            conn.close()
             if not df.empty:
                 # Deduplicate by target_timestamp taking latest run
                 df = df.drop_duplicates(subset=['target_timestamp'], keep='first')
@@ -76,6 +75,8 @@ class ForecastAdapter:
                     return df
         except Exception as e:
             print(f"[ForecastAdapter] SQLite cache query error: {e}")
+        finally:
+            conn.close()
         return None
 
     def get_climatology_fallback(self, target_timestamps: List[str]) -> pd.DataFrame:

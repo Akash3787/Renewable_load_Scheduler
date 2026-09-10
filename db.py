@@ -7,7 +7,7 @@ SCHEMA_PATH = Path(__file__).parent / "schema.sql"
 
 def get_connection(db_path: Path = DB_PATH) -> sqlite3.Connection:
     """Return a connection to the SQLite database with row factory enabled."""
-    conn = sqlite3.connect(str(db_path))
+    conn = sqlite3.connect(str(db_path), timeout=30.0)
     conn.row_factory = sqlite3.Row
     return conn
 
