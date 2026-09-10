@@ -27,36 +27,38 @@ class BacktestEngine:
         """
         conn = get_connection(self.db_path) if self.db_path else get_connection()
         
-        # Load schedule
-        df_sched = pd.read_sql_query("SELECT * FROM schedule WHERE run_id = ?", conn, params=[run_id])
-        if df_sched.empty:
-            conn.close()
-            raise ValueError(f"No schedule found for run_id: {run_id}")
+        try:
+            # Load schedule
+            df_sched = pd.read_sql_query("SELECT * FROM schedule WHERE run_id = ?", conn, params=[run_id])
+            if df_sched.empty:
+                raise ValueError(f"No schedule found for run_id: {run_id}")
+                
+            timestamps = sorted(df_sched['scheduled_start'].unique())
             
-        timestamps = sorted(df_sched['scheduled_start'].unique())
-        
-        # Load actual generation and tariff data
-        query_actual = """
-            SELECT a.timestamp, a.pv_kw_actual, a.wind_kw_actual, t.energy_rate, t.demand_charge_rate, t.is_peak_window
-            FROM generation_actual a
-            JOIN tariff t ON a.timestamp = t.timestamp
-            WHERE a.timestamp IN ({})
-            ORDER BY a.timestamp ASC
-        """.format(','.join('?' * len(timestamps)))
-        
-        df_actual = pd.read_sql_query(query_actual, conn, params=timestamps)
-        
-        # Initial storage specs
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM storage_state ORDER BY timestamp ASC LIMIT 1;")
-        bess_spec = cursor.fetchone()
+            # Load actual generation and tariff data
+            query_actual = """
+                SELECT a.timestamp, a.pv_kw_actual, a.wind_kw_actual, t.energy_rate, t.demand_charge_rate, t.is_peak_window
+                FROM generation_actual a
+                JOIN tariff t ON a.timestamp = t.timestamp
+                WHERE a.timestamp IN ({})
+                ORDER BY a.timestamp ASC
+            """.format(','.join('?' * len(timestamps)))
+            
+            df_actual = pd.read_sql_query(query_actual, conn, params=timestamps)
+            
+            # Initial storage specs
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM storage_state ORDER BY timestamp ASC LIMIT 1;")
+            bess_spec = cursor.fetchone()
+        finally:
+            conn.close()
         
         soc_kwh = bess_spec['soc_kwh'] if bess_spec else 200.0
         cap_kwh = bess_spec['capacity_kwh'] if bess_spec else 400.0
         max_chg = bess_spec['max_charge_kw'] if bess_spec else 100.0
         max_dis = bess_spec['max_discharge_kw'] if bess_spec else 100.0
         rte = bess_spec['round_trip_eff'] if bess_spec else 0.90
-        one_way_eff = np.sqrt(rte) # Equal split for charge and discharge efficiency
+        one_way_eff = np.sqrt(rte)
         
         min_soc = cap_kwh * 0.10
         max_soc = cap_kwh * 0.95
@@ -72,11 +74,9 @@ class BacktestEngine:
         demand_rate = 500.0
         
         for ts_str in timestamps:
-            # Active load sum at this timestep
             active_loads = df_sched[df_sched['scheduled_start'] == ts_str]
             total_load_kw = active_loads['power_kw'].sum()
             
-            # Ground truth actual generation
             actual_row = df_actual[df_actual['timestamp'] == ts_str]
             if not actual_row.empty:
                 pv_act = float(actual_row['pv_kw_actual'].values[0])
@@ -89,7 +89,6 @@ class BacktestEngine:
             ren_gen_kw = pv_act + wind_act
             total_ren_gen_kwh += ren_gen_kw
             
-            # BESS Charge/Discharge logic
             chg_kw = 0.0
             dis_kw = 0.0
             
@@ -97,28 +96,21 @@ class BacktestEngine:
                 chg_kw = bess_actions[ts_str].get('charge_kw', 0.0)
                 dis_kw = bess_actions[ts_str].get('discharge_kw', 0.0)
                 
-                # Apply BESS physical limits
                 chg_kw = min(chg_kw, max_chg, (max_soc - soc_kwh) / one_way_eff)
                 dis_kw = min(dis_kw, max_dis, (soc_kwh - min_soc) * one_way_eff)
                 
-                # Update SOC
                 soc_kwh = soc_kwh + (chg_kw * one_way_eff) - (dis_kw / one_way_eff)
                 soc_kwh = np.clip(soc_kwh, min_soc, max_soc)
                 
-            # Power balance
-            # Direct renewable consumption by load
             ren_to_load = min(total_load_kw, ren_gen_kw)
             net_load_kw = total_load_kw - ren_to_load
             
-            # Excess renewables available for BESS charge
             surplus_ren = max(0.0, ren_gen_kw - ren_to_load)
             ren_to_bess = min(surplus_ren, chg_kw)
             
             total_ren_consumed = ren_to_load + ren_to_bess
             total_ren_consumed_kwh += total_ren_consumed
             
-            # Grid import requirement
-            # Grid serves net load + battery charge from grid (if any)
             grid_import_kw = max(0.0, net_load_kw + (chg_kw - ren_to_bess) - dis_kw)
             total_grid_import_kwh += grid_import_kw
             
@@ -143,8 +135,6 @@ class BacktestEngine:
                 'energy_cost': timestep_energy_cost
             })
             
-        conn.close()
-        
         demand_charge_cost = max_grid_peak_kw * demand_rate
         total_bill = total_energy_cost + demand_charge_cost
         
